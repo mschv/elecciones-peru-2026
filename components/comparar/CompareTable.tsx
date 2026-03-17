@@ -494,7 +494,7 @@ function CongresistasTable({ items }: { items: CongresoMemberFull[] }) {
               const latest = [...m.candidate.experience].sort(
                 (a, b) => (b.year_inicio ?? 0) - (a.year_inicio ?? 0)
               )[0];
-              return latest ? `${latest.cargo} — ${latest.institucion}` : "—";
+              return latest ? `${latest.cargo} — ${latest.organizacion}` : "—";
             })}
           />
 
