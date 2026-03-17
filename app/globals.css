@@ -12,7 +12,9 @@
 
 @layer base {
   :root {
-    --background: oklch(1 0 0);
+    --background: oklch(0.977 0.003 88); /* warm off-white #F8F7F5 */
+    --card: oklch(1 0 0); /* cards stay pure white for contrast */
+    --brand: #e53935;
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.145 0 0);
@@ -82,12 +84,14 @@
     --font-sans: var(--font-sans);
   }
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif);
   }
   html {
     @apply font-sans;
   }
+
 }
