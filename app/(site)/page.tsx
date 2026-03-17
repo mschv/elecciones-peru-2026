@@ -1,11 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
-import Countdown from "@/components/home/Countdown";
 import StatsCharts from "@/components/home/StatsCharts";
 import type {
   EduChartRow,
   ExpChartRow,
-  ProcesoChartRow,
 } from "@/components/home/StatsCharts";
 import QuickCompare from "@/components/home/QuickCompare";
 import type {
@@ -29,16 +27,16 @@ const EDU_RANK: Record<EducationLevel, number> = {
 
 const CARGO_DISPLAY: Record<string, string> = {
   presidente: "Presidente",
-  vicepresidente_primero: "1° VP",
-  vicepresidente_segundo: "2° VP",
+  vicepresidente_1: "1° Vicepres.",
+  vicepresidente_2: "2° Vicepres.",
   senador: "Senador",
-  congresista: "Congresista",
+  congresista: "Diputado",
 };
 
 const CARGO_ORDER = [
   "presidente",
-  "vicepresidente_primero",
-  "vicepresidente_segundo",
+  "vicepresidente_1",
+  "vicepresidente_2",
   "senador",
   "congresista",
 ];
@@ -59,11 +57,7 @@ function eduGroup(education: { nivel: EducationLevel }[]): string {
   const top = education.reduce((best, e) =>
     (EDU_RANK[e.nivel] ?? 0) > (EDU_RANK[best.nivel] ?? 0) ? e : best
   );
-  const n = top.nivel;
-  if (n === "tecnico") return "tecnico";
-  if (n === "universitario") return "universitario";
-  if (["posgrado"].includes(n)) return "posgrado";
-  return "sinEstudios";
+  return top.nivel === "sin_estudios" ? "sinEstudios" : top.nivel;
 }
 
 function toPct(
@@ -113,15 +107,17 @@ export default async function HomePage() {
 
   // ── 1. Parallel data fetching ───────────────────────────────────────────────
   const [
-    { count: totalPartidos },
+    { count: _totalPartidos },
     { count: totalFormulas },
+    { count: totalCandidatosCount },
     { data: rawMembers },
     { data: rawFormulaSamples },
     { data: rawPartidoSamples },
     { data: rawCongresistasSamples },
   ] = await Promise.all([
     supabase.from("partidos").select("*", { count: "exact", head: true }),
-    supabase.from("formulas").select("*", { count: "exact", head: true }).eq("activa", true),
+    supabase.from("formula_members").select("*", { count: "exact", head: true }).eq("cargo", "presidente"),
+    supabase.from("candidates").select("*", { count: "exact", head: true }),
     supabase.from("formula_members").select(`
       cargo,
       candidate:candidate_id (
@@ -130,7 +126,7 @@ export default async function HomePage() {
         experience ( sector ),
         procesos_judiciales ( status )
       )
-    `),
+    `).limit(10000),
     supabase
       .from("formulas")
       .select(`
@@ -207,10 +203,7 @@ export default async function HomePage() {
 
   const pctConProceso =
     totalCandidatos > 0 ? Math.round((withProceso / totalCandidatos) * 100) : 0;
-  const pctExpPublica =
-    totalCandidatos > 0 ? Math.round((withPublic / totalCandidatos) * 100) : 0;
-  const pctExpPrivada =
-    totalCandidatos > 0 ? Math.round((withPrivate / totalCandidatos) * 100) : 0;
+
 
   // ── 3. Per-cargo chart data ───────────────────────────────────────────────────
   const cargoGroups: Record<string, RawMember[]> = {};
@@ -219,69 +212,53 @@ export default async function HomePage() {
     cargoGroups[m.cargo].push(m);
   }
 
-  const eduChart: EduChartRow[] = CARGO_ORDER.filter(
-    (c) => (cargoGroups[c]?.length ?? 0) > 0
-  ).map((cargo) => {
+  const activeCargos = CARGO_ORDER.filter((c) => (cargoGroups[c]?.length ?? 0) > 0);
+
+  const eduChart: EduChartRow[] = activeCargos.map((cargo) => {
     const group = cargoGroups[cargo] ?? [];
-    const counts = {
-      sinEstudios: 0,
-      tecnico: 0,
-      universitario: 0,
-      posgrado: 0,
-    };
+    const counts = { sinEstudios: 0, primaria: 0, secundaria: 0, tecnico: 0, universitario: 0, posgrado: 0 };
     for (const m of group) {
-      const g = eduGroup(m.candidate.education);
-      (counts as Record<string, number>)[g]++;
+      const key = eduGroup(m.candidate.education);
+      (counts as Record<string, number>)[key]++;
     }
-    const pct = toPct(counts, group.length);
-    return { cargo: CARGO_DISPLAY[cargo] ?? cargo, ...pct } as EduChartRow;
+    return { cargo: CARGO_DISPLAY[cargo] ?? cargo, ...toPct(counts, group.length), _total: group.length } as EduChartRow;
   });
 
-  const expChart: ExpChartRow[] = CARGO_ORDER.filter(
-    (c) => (cargoGroups[c]?.length ?? 0) > 0
-  ).map((cargo) => {
+  const expChart: ExpChartRow[] = activeCargos.map((cargo) => {
     const group = cargoGroups[cargo] ?? [];
-    let publico = 0;
-    let privado = 0;
+    let soloPublico = 0, soloPrivado = 0, mixto = 0, sinExp = 0;
     for (const m of group) {
       const hasPublic = m.candidate.experience.some((e) => e.sector === "publico");
       const hasPrivate = m.candidate.experience.some((e) =>
         ["privado", "academia", "ong", "otro"].includes(e.sector)
       );
-      if (hasPublic) publico++;
-      else if (hasPrivate) privado++;
-      else privado++; // no experience → treat as "other/private"
+      if (hasPublic && hasPrivate) mixto++;
+      else if (hasPublic) soloPublico++;
+      else if (hasPrivate) soloPrivado++;
+      else sinExp++;
     }
-    const pct = toPct({ publico, privado }, group.length);
-    return { cargo: CARGO_DISPLAY[cargo] ?? cargo, ...pct } as ExpChartRow;
+    return { cargo: CARGO_DISPLAY[cargo] ?? cargo, ...toPct({ soloPublico, soloPrivado, mixto, sinExp }, group.length), _total: group.length } as ExpChartRow;
   });
 
-  const procesosChart: ProcesoChartRow[] = CARGO_ORDER.filter(
-    (c) => (cargoGroups[c]?.length ?? 0) > 0
-  ).map((cargo) => {
-    const group = cargoGroups[cargo] ?? [];
-    let enCurso = 0;
-    let enApelacion = 0;
-    let archivado = 0;
-    let sinProcesos = 0;
-    for (const m of group) {
-      const ps = m.candidate.procesos_judiciales;
-      if (ps.length === 0) {
-        sinProcesos++;
-      } else if (ps.some((p) => ACTIVE_STATUSES.includes(p.status))) {
-        enCurso++;
-      } else if (ps.some((p) => APPEAL_STATUSES.includes(p.status))) {
-        enApelacion++;
-      } else {
-        archivado++;
-      }
-    }
-    const pct = toPct({ enCurso, enApelacion, archivado, sinProcesos }, group.length);
-    return {
-      cargo: CARGO_DISPLAY[cargo] ?? cargo,
-      ...pct,
-    } as ProcesoChartRow;
-  });
+  function makeSimpleChart(predicate: (ps: { status: string }[]) => boolean): { cargo: string; con: number; sin: number; _total: number }[] {
+    return activeCargos.map((cargo) => {
+      const group = cargoGroups[cargo] ?? [];
+      const con = group.filter((m) => predicate(m.candidate.procesos_judiciales)).length;
+      const sin = group.length - con;
+      const pct = toPct({ con, sin }, group.length);
+      return { cargo: CARGO_DISPLAY[cargo] ?? cargo, con: pct.con, sin: pct.sin, _total: group.length };
+    });
+  }
+
+  const activosChart = makeSimpleChart((ps) =>
+    ps.some((p) => ["en_curso", "en_apelacion"].includes(p.status))
+  );
+  const civilesChart = makeSimpleChart((ps) =>
+    ps.some((p) => p.status === "sentencia_civil")
+  );
+  const condenaChart = makeSimpleChart((ps) =>
+    ps.some((p) => ["sentencia_condenatoria", "sentencia_firme", "pena_cumplida"].includes(p.status))
+  );
 
   // ── 4. Sample data for quick compare ─────────────────────────────────────────
   const sampleFormulas: SampleFormula[] = ((rawFormulaSamples ?? []) as any[]).map((f) => {
@@ -351,67 +328,75 @@ export default async function HomePage() {
 
   // ── 5. Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div className="min-h-screen" style={{ backgroundColor: "#faf9f7" }}>
       {/* ══ HERO ══════════════════════════════════════════════════════════════ */}
-      <div className="max-w-6xl mx-auto px-4 pt-6 pb-4">
-        <div
-          className="rounded-2xl p-6 md:p-8"
-          style={{ backgroundColor: "#111111" }}
-        >
-          <div className="flex flex-col md:flex-row md:items-start gap-6">
-            {/* Left: Title + subtitle + countdown */}
-            <div className="flex-1 space-y-4">
-              <div>
-                <h1 className="text-3xl md:text-4xl font-extrabold text-white leading-tight">
-                  Elecciones{" "}
-                  <span style={{ color: "#e53935" }}>Perú</span>{" "}
-                  2026
-                </h1>
-                <p className="text-gray-400 mt-2 text-sm md:text-base max-w-lg">
-                  Conoce a tus candidatos. Compara. Decide.{" "}
-                  <span className="text-gray-500">Data oficial del JNE.</span>
-                </p>
-              </div>
+      <div className="bg-white px-4 pt-10 pb-12 border-b border-gray-100">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center gap-10">
 
-              <Countdown />
-
-              {/* Freshness badge */}
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
-                <span>
-                  Datos actualizados · JNE · Infogob · ONPE
-                </span>
-              </div>
+          {/* Left: text + buttons */}
+          <div className="flex-1">
+            {/* Badge */}
+            <div className="inline-flex items-center gap-2 text-xs text-gray-500 border border-gray-300 rounded-full px-3 py-1 mb-6">
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0" />
+              Iniciativa ciudadana · independiente y no partidaria
             </div>
 
-            {/* Right: Stat pills */}
-            <div className="grid grid-cols-2 gap-3 md:w-72 shrink-0">
-              <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-white">
-                  {totalPartidos ?? "—"}
-                </p>
-                <p className="text-xs text-gray-400 mt-0.5">Partidos</p>
-              </div>
-              <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-white">
-                  {totalFormulas ?? "—"}
-                </p>
-                <p className="text-xs text-gray-400 mt-0.5">Fórmulas</p>
-              </div>
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-amber-400">
-                  {totalCandidatos.toLocaleString("es-PE")}
-                </p>
-                <p className="text-xs text-amber-300/70 mt-0.5">Candidatos</p>
-              </div>
-              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-red-400">
-                  {pctConProceso}%
-                </p>
-                <p className="text-xs text-red-300/70 mt-0.5">Con procesos</p>
-              </div>
+            {/* Heading */}
+            <h1 className="text-4xl md:text-5xl font-bold text-gray-900 leading-tight">
+              Conoce a tus candidatos.<br />
+              <span style={{ color: "#c0392b" }}>Compara. Decide.</span>
+            </h1>
+
+            <p className="text-gray-600 mt-4 text-base leading-relaxed max-w-lg">
+              Información oficial de todos los partidos, fórmulas presidenciales y candidatos al
+              congreso para las Elecciones Perú 2026.
+            </p>
+            <p className="text-gray-400 mt-2 text-sm leading-relaxed max-w-lg">
+              Este sitio no está afiliado al JNE, ningún partido político ni entidad gubernamental.
+              Los datos provienen de fuentes oficiales públicas: JNE, Infogob y ONPE.
+            </p>
+
+            {/* CTA buttons */}
+            <div className="flex flex-wrap gap-3 mt-6">
+              <Link
+                href="/partidos"
+                className="px-5 py-2.5 rounded-lg text-sm font-semibold text-white"
+                style={{ backgroundColor: "#c0392b" }}
+              >
+                Ver partidos
+              </Link>
+              <Link
+                href="/congreso"
+                className="px-5 py-2.5 rounded-lg text-sm font-semibold text-gray-700 border border-gray-300 hover:border-gray-400 transition-colors"
+              >
+                Ver congreso
+              </Link>
             </div>
           </div>
+
+          {/* Right: stat cards */}
+          <div className="flex flex-col gap-3 md:w-80 shrink-0">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl p-4 bg-gray-900">
+                <p className="text-xs uppercase tracking-widest text-gray-400 mb-1">Partidos</p>
+                <p className="text-3xl font-bold text-white">{totalFormulas ?? "—"}</p>
+                <p className="text-xs text-gray-500 mt-1">con fórmula presidencial</p>
+              </div>
+              <div className="rounded-xl p-4 bg-gray-900">
+                <p className="text-xs uppercase tracking-widest text-gray-400 mb-1">Candidatos</p>
+                <p className="text-3xl font-bold text-white">{(totalCandidatosCount ?? 0).toLocaleString("es-PE")}</p>
+                <p className="text-xs text-gray-500 mt-1">candidatos registrados</p>
+              </div>
+            </div>
+            <div className="rounded-xl p-4 border" style={{ backgroundColor: "#fff5f5", borderColor: "#fecaca" }}>
+              <p className="text-xs uppercase tracking-widest font-semibold mb-1" style={{ color: "#c0392b" }}>
+                Candidatos con condena firme
+              </p>
+              <p className="text-3xl font-bold" style={{ color: "#c0392b" }}>{pctConProceso}%</p>
+              <p className="text-xs text-red-400 mt-1">de todos los candidatos</p>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -422,18 +407,15 @@ export default async function HomePage() {
             <h2 className="text-lg font-bold text-gray-900">
               Estadísticas de los candidatos
             </h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {pctExpPublica}% con experiencia pública ·{" "}
-              {pctExpPrivada}% con experiencia privada ·{" "}
-              {pctConProceso}% con procesos judiciales
-            </p>
           </div>
         </div>
 
         <StatsCharts
           edu={eduChart}
           exp={expChart}
-          procesos={procesosChart}
+          activos={activosChart}
+          civiles={civilesChart}
+          condena={condenaChart}
         />
       </div>
 
@@ -498,6 +480,69 @@ export default async function HomePage() {
               <p className="text-xs text-[#e53935] font-medium mt-3">{cta}</p>
             </Link>
           ))}
+        </div>
+      </div>
+
+      {/* ══ METHODOLOGY ═══════════════════════════════════════════════════════ */}
+      <div className="max-w-6xl mx-auto px-4 py-10 mt-4 border-t border-gray-200">
+        <h2 className="text-base font-bold text-gray-900 mb-3">Metodología</h2>
+        <p className="text-[13px] text-gray-500 leading-[1.7] max-w-3xl">
+          Elecciones Perú 2026 es una plataforma ciudadana independiente que centraliza información
+          oficial sobre candidatos y partidos para las elecciones generales del 12 de abril de 2026.
+          No tiene fines de lucro ni afiliación política o gubernamental.
+        </p>
+
+        <div className="border-t border-gray-200 mt-6 pt-6 grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
+          {/* Left column */}
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-[12px] font-medium text-gray-400 mb-2">Fuentes de datos</h3>
+              <p className="text-[13px] text-gray-500 leading-[1.7]">
+                Los datos de candidatos, fórmulas presidenciales, listas al congreso y planes de
+                gobierno provienen del JNE (Jurado Nacional de Elecciones) y su plataforma Infogob,
+                a través de sus APIs públicas oficiales.
+              </p>
+            </div>
+            <div>
+              <h3 className="text-[12px] font-medium text-gray-400 mb-2">Cómo se obtienen los datos</h3>
+              <p className="text-[13px] text-gray-500 leading-[1.7]">
+                La información se actualiza mediante un proceso automatizado que consulta las APIs
+                oficiales del JNE para cada candidato, extrayendo su formación académica, experiencia
+                laboral, procesos judiciales y patrimonio declarado.
+              </p>
+            </div>
+          </div>
+
+          {/* Right column */}
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-[12px] font-medium text-gray-400 mb-2">Cómo se clasifican los datos</h3>
+              <p className="text-[13px] text-gray-500 leading-[1.7]">
+                El nivel educativo refleja el máximo nivel declarado por cada candidato. La experiencia
+                laboral se clasifica como pública, privada o mixta. Los procesos judiciales se agrupan
+                en tres categorías: procesos activos, sentencias civiles y condenas firmes, según el
+                estado reportado por el JNE.
+              </p>
+            </div>
+            <div>
+              <h3 className="text-[12px] font-medium text-gray-400 mb-2">Sobre el proyecto</h3>
+              <p className="text-[13px] text-gray-500 leading-[1.7]">
+                Este sitio es una iniciativa ciudadana sin fines de lucro. Fue construido con Next.js
+                y el código fuente está disponible bajo licencia abierta. Desarrollado con asistencia
+                de{" "}
+                <a
+                  href="https://claude.ai/code"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline"
+                  style={{ color: "#e02020" }}
+                >
+                  Claude Code
+                </a>{" "}
+                (Anthropic).
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 

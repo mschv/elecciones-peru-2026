@@ -114,7 +114,7 @@ def upsert_education(supabase, data: dict, uuid: str) -> int:
             "titulo":      (edu.get("strEspecialidadPosgrado") or edu.get("strCarreraPosgrado") or edu.get("strGradoPosgrado") or "").title() or None,
             "institucion": inst.strip().title(),
             "year_fin":    parse_int(edu.get("strAnioPosgrado") or edu.get("strAnioFinPosgrado")),
-            "status": "completo",
+            "estado": "completo",
         })
 
     if not records:
