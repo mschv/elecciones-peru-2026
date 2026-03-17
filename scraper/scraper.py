@@ -86,6 +86,78 @@ TIPO_DIPUTADOS               = 15
 TIPO_SENADO_UNICO            = 20  # national senate list
 TIPO_SENADO_MULTIPLE         = 21  # per-region senate lists
 
+# ── Jurado → electoral district ───────────────────────────────────────────────
+#
+# strDepartamento is unreliable for deputies: 1363 of 5469 have it empty, and
+# "LIMA" covers both Lima Metropolitana and Lima Provincias.
+# strJuradoElectoralCreacion (the JNE circuit) is the authoritative signal.
+
+_JURADO_TO_DISTRICT: dict[str, str] = {
+    # Lima Provincias
+    "HUAURA": "Lima Provincias", "CAÑETE": "Lima Provincias",
+    "BARRANCA": "Lima Provincias", "HUAROCHIRI": "Lima Provincias",
+    "YAUYOS": "Lima Provincias", "MATUCANA": "Lima Provincias",
+    "HUACHO": "Lima Provincias",
+    # Other departments
+    "ABANCAY": "Apurimac", "ANDAHUAYLALAS": "Apurimac",
+    "AREQUIPA": "Arequipa",
+    "CAJAMARCA": "Cajamarca",
+    "CALLAO": "Callao",
+    "CHACHAPOYAS": "Amazonas",
+    "CHICLAYO": "Lambayeque",
+    "CORONEL PORTILLO": "Ucayali",
+    "CUSCO": "Cusco",
+    "HUAMANGA": "Ayacucho",
+    "HUANCAVELICA": "Huancavelica",
+    "HUANCAYO": "Junin",
+    "HUANUCO": "Huanuco",
+    "HUARAZ": "Ancash",
+    "ICA": "Ica",
+    "MARISCAL NIETO": "Moquegua",
+    "MAYNAS": "Loreto",
+    "PASCO": "Pasco",
+    "PIURA": "Piura",
+    "PUNO": "Puno",
+    "SAN MARTIN": "San Martin",
+    "TACNA": "Tacna",
+    "TAMBOPATA": "Madre De Dios",
+    "TRUJILLO": "La Libertad",
+    "TUMBES": "Tumbes",
+}
+
+
+def deputy_region_from_raw(raw: dict) -> str:
+    """
+    Derive the correct electoral district for a deputy candidate using
+    strJuradoElectoralCreacion as the primary signal, falling back to
+    strDepartamento if the jurado is not mapped.
+    """
+    jurado = (raw.get("strJuradoElectoralCreacion") or "").upper().strip()
+
+    if jurado.startswith("LIMA"):
+        return "Lima Metropolitana"
+
+    dist = _JURADO_TO_DISTRICT.get(jurado)
+    if dist:
+        return dist
+
+    # Strip trailing number suffix (e.g. "AREQUIPA 1" → "AREQUIPA")
+    parts = jurado.rsplit(None, 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        dist = _JURADO_TO_DISTRICT.get(parts[0])
+        if dist:
+            return dist
+
+    # Fallback: use strDepartamento
+    dept = (raw.get("strDepartamento") or "").strip()
+    if dept and dept.upper() != "LIMA":
+        return dept.title()
+    if dept.upper() == "LIMA":
+        return "Lima Provincias"
+
+    return "Nacional"
+
+
 # ── Cargo mappings ────────────────────────────────────────────────────────────
 
 # Presidential formula (idCargo from API → DB enum)
@@ -698,14 +770,17 @@ def run_deputies(client: httpx.Client, fetch_hv: bool) -> None:
         if not formula_uuid:
             continue
 
-        region = dept.title()
+        region = deputy_region_from_raw(members[0])
         for m in sorted(members, key=lambda x: x.get("intPosicion", 0)):
+            member_region = deputy_region_from_raw(m)
             cand_uuid, _ = upsert_candidate_basic(m, "congresista",
                                                   partido_id=partido_uuid,
-                                                  electoral_region=region,
+                                                  electoral_region=member_region,
                                                   orden=m.get("intPosicion"))
             if not cand_uuid:
                 continue
+            upsert_formula_member(formula_uuid, cand_uuid, "congresista",
+                                  m.get("intPosicion", 0), member_region)
             if fetch_hv and cand_uuid not in _hv_done:
                 time.sleep(REQUEST_DELAY)
                 upsert_candidate_hv(client, m, cand_uuid)
