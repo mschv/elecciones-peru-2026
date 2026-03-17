@@ -81,9 +81,10 @@ export default function FormulaClient({ formulas }: Props) {
 
       {/* ── Right panel ── */}
       <div
-        className={`flex-1 overflow-y-auto bg-gray-50 ${
+        className={`flex-1 overflow-y-auto ${
           mobileView === "list" ? "hidden md:block" : "block"
         }`}
+        style={{ backgroundColor: "#faf9f7" }}
       >
         <FormulaDetail
           formulaId={selectedId}

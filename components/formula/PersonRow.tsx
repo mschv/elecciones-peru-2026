@@ -166,8 +166,8 @@ export default function PersonRow({ candidate, cargo, partyColor, simple = false
 
             {/* Summary tags */}
             <div className="flex gap-1.5 mt-1.5 flex-wrap">
-              <Tag color={activeProcesos > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>
-                {activeProcesos > 0 ? `${activeProcesos} proceso${activeProcesos !== 1 ? "s" : ""}` : "Sin procesos"}
+              <Tag color={activeProcesos > 0 ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500"}>
+                {activeProcesos > 0 ? `${activeProcesos} proceso${activeProcesos !== 1 ? "s" : ""}` : "Sin procesos penales"}
               </Tag>
               {isCongress2021 && (
                 <Tag color="bg-blue-100 text-blue-700">Congresista 2021–2026</Tag>

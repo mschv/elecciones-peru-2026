@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import type { CongresoMember } from "@/lib/supabase/types";
 import CandidateCard from "./CandidateCard";
 
-const PAGE_SIZE = 150;
+const PAGE_SIZE = 20;
 
 interface Props {
   members: CongresoMember[];

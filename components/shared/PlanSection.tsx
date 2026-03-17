@@ -328,7 +328,7 @@ function ProposalCard({
       {objSubgroups.map((sg, si) => (
         <div key={si} style={{ borderTop: si > 0 ? "0.5px solid #e5e7eb" : undefined }}>
           {!singleSubgroup && (
-            <div className="px-3 py-2.5 bg-gray-50" style={{ borderBottom: "0.5px solid #e5e7eb" }}>
+            <div className="px-3 py-2.5" style={{ backgroundColor: "#faf9f7", borderBottom: "0.5px solid #e5e7eb" }}>
               <p className="uppercase text-gray-400 mb-1" style={{ fontSize: 9, letterSpacing: "0.06em" }}>
                 OBJETIVO ESTRATÉGICO
               </p>

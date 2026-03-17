@@ -94,7 +94,7 @@ function Dropdown<T extends string>({
 
 export default function CandidateFilters({ members, cargo, filters, onChange, filteredCount }: Props) {
   const isSenado = cargo === "senador";
-  const regions = Array.from(new Set(members.map((m) => m.region).filter(Boolean))) as string[];
+  const regions = Array.from(new Set(members.map((m) => m.region).filter(Boolean))).sort() as string[];
   const partidos = Array.from(
     new Map(members.map((m) => [m.formula.partido.id, m.formula.partido])).values()
   ).sort((a, b) => (a.nombre_corto ?? a.nombre).localeCompare(b.nombre_corto ?? b.nombre));

@@ -83,7 +83,7 @@ export default async function CandidatoCongresoPage({ params }: Props) {
   if (!member) notFound();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ backgroundColor: "#faf9f7" }}>
       <CandidateProfile member={member} standalone />
     </div>
   );

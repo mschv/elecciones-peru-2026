@@ -156,7 +156,7 @@ function AnotacionesSection({ anotaciones }: { anotaciones: AnotacionJne[] }) {
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       <details>
-        <summary className="flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer list-none">
+        <summary className="flex items-center justify-between px-4 py-3 hover:bg-gray-100 transition-colors cursor-pointer list-none" style={{ backgroundColor: "#faf9f7" }}>
           <span className="flex items-center gap-2 text-sm">
             {accordionTitle}
           </span>
@@ -237,6 +237,7 @@ export default function CandidateProfile({ member, onBack, standalone = false }:
   const latestPatrimonio = [...patrimonioArr].sort((a, b) => (b.year ?? 0) - (a.year ?? 0))[0] ?? null;
 
   const topEdu = highestEdu(candidate.education);
+  const autoOpen = cargo === "senador" || cargo === "congresista";
 
   return (
     <div className="min-h-full">
@@ -272,7 +273,7 @@ export default function CandidateProfile({ member, onBack, standalone = false }:
                     {condenaFirme > 0 && <span className="px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 font-normal">Condena firme</span>}
                     {activeProcesos > 0 && <span className="px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 font-normal">Proceso penal</span>}
                     {sentenciasCiviles > 0 && <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700 font-normal">Sentencia civil</span>}
-                    {activeProcesos === 0 && condenaFirme === 0 && sentenciasCiviles === 0 && <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700 font-normal">Sin procesos</span>}
+                    {activeProcesos === 0 && condenaFirme === 0 && sentenciasCiviles === 0 && <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500 font-normal">Sin procesos penales</span>}
                     {topEdu && <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700 font-normal">{EDU_LEVEL_LABELS[topEdu.nivel]}</span>}
                   </h1>
                   {/* Party link with colored dot */}
@@ -356,6 +357,7 @@ export default function CandidateProfile({ member, onBack, standalone = false }:
             color={color}
             title="Formación académica"
             summary={`— ${candidate.education.length} registro${candidate.education.length !== 1 ? "s" : ""}`}
+            defaultOpen={autoOpen}
           >
             {candidate.education.length === 0 ? (
               <p className="text-xs text-gray-400">Sin registros de educación.</p>
@@ -411,6 +413,7 @@ export default function CandidateProfile({ member, onBack, standalone = false }:
             color={color}
             title="Experiencia"
             summary={`— ${candidate.experience.length} cargo${candidate.experience.length !== 1 ? "s" : ""}`}
+            defaultOpen={autoOpen}
           >
             {candidate.experience.length === 0 ? (
               <p className="text-xs text-gray-400">Sin experiencia registrada.</p>
@@ -501,6 +504,7 @@ export default function CandidateProfile({ member, onBack, standalone = false }:
                 color={color}
                 title="Cargos partidarios y de elección popular"
                 summary={`— ${total} registro${total !== 1 ? "s" : ""}`}
+                defaultOpen={autoOpen}
               >
                 <div className="space-y-4">
                   {partidarios.length > 0 && (
@@ -524,12 +528,12 @@ export default function CandidateProfile({ member, onBack, standalone = false }:
           {(() => {
             const penales = candidate.procesos_judiciales.filter((p) => p.status !== "sentencia_civil");
             if (penales.length === 0) return (
-              <Accordion color={color} title="Sentencias penales" summary="">
+              <Accordion color={color} title="Sentencias penales" summary="" defaultOpen={autoOpen}>
                 <p className="text-xs text-green-600 font-medium">Sin sentencias penales registradas</p>
               </Accordion>
             );
             return (
-              <Accordion color={color} title="Sentencias penales" summary={`— ${penales.length} registro${penales.length !== 1 ? "s" : ""}`}>
+              <Accordion color={color} title="Sentencias penales" summary={`— ${penales.length} registro${penales.length !== 1 ? "s" : ""}`} defaultOpen={autoOpen}>
                 <div className="space-y-2">
                   {penales.map((p, i) => (
                     <div key={i} className="border border-gray-200 rounded-lg p-3 space-y-2">
@@ -595,7 +599,7 @@ export default function CandidateProfile({ member, onBack, standalone = false }:
             const civiles = candidate.procesos_judiciales.filter((p) => p.status === "sentencia_civil");
             if (civiles.length === 0) return null;
             return (
-              <Accordion color={color} title="Sentencias civiles" summary={`— ${civiles.length} registro${civiles.length !== 1 ? "s" : ""}`}>
+              <Accordion color={color} title="Sentencias civiles" summary={`— ${civiles.length} registro${civiles.length !== 1 ? "s" : ""}`} defaultOpen={autoOpen}>
                 <div className="space-y-2">
                   {civiles.map((p, i) => (
                     <div key={i} className="border border-gray-200 rounded-lg p-3 space-y-2">
