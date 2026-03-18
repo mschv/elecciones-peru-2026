@@ -5,7 +5,7 @@ import CongresoClient from "@/components/congreso/CongresoClient";
 
 export const metadata = { title: "Senadores — Elecciones Perú 2026" };
 
-export default async function SenadoresPage({ searchParams }: { searchParams: { partido?: string } }) {
+export default async function SenadoresPage({ searchParams }: { searchParams: { partido?: string; procesos?: string } }) {
   const supabase = createClient();
 
   const SELECT = `
@@ -65,7 +65,7 @@ export default async function SenadoresPage({ searchParams }: { searchParams: { 
 
   return (
     <CongresoLayout activeTab="senadores">
-      <CongresoClient members={members} cargo="senador" initialPartido={searchParams.partido} />
+      <CongresoClient members={members} cargo="senador" initialPartido={searchParams.partido} initialProcesos={searchParams.procesos} />
     </CongresoLayout>
   );
 }

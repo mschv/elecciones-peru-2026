@@ -114,14 +114,18 @@ async function fetchDetail(partyId: string): Promise<DetailWithAllMembers | null
 
 // ─── Small UI atoms ───────────────────────────────────────────────────────────
 
+const CONDENA_STATUSES = ["sentencia_condenatoria", "sentencia_firme", "pena_cumplida"];
+const ACTIVOS_STATUSES = ["en_curso", "en_apelacion"];
+const CIVIL_STATUSES   = ["sentencia_civil"];
+
 function StatRow({
-  label, value, accent, onClick,
+  label, value, accent, href,
 }: {
-  label: string; value: number; accent?: boolean; onClick?: () => void;
+  label: string; value: number; accent?: boolean; href?: string;
 }) {
   const row = (
-    <div className={`flex justify-between items-center gap-2 ${onClick && value > 0 ? "group cursor-pointer" : ""}`}>
-      <span className={`text-[11px] ${onClick && value > 0 ? "text-gray-600 group-hover:underline" : "text-gray-600"}`}>
+    <div className={`flex justify-between items-center gap-2 ${href && value > 0 ? "group" : ""}`}>
+      <span className={`text-[11px] ${href && value > 0 ? "text-gray-600 group-hover:underline" : "text-gray-600"}`}>
         {label}
       </span>
       <span className={`text-[11px] font-semibold shrink-0 ${accent ? "text-red-600" : "text-gray-800"}`}>
@@ -129,122 +133,34 @@ function StatRow({
       </span>
     </div>
   );
-  if (onClick && value > 0) {
-    return (
-      <button onClick={onClick} className="w-full text-left">
-        {row}
-      </button>
-    );
+  if (href && value > 0) {
+    return <Link href={href} className="block">{row}</Link>;
   }
   return row;
 }
 
 function GroupStatCard({
   title, count, condenas, activos, civiles, href,
-  onCondenas, onActivos, onCiviles,
+  hrefCondenas, hrefActivos, hrefCiviles,
 }: {
   title: string; count: number; condenas: number; activos: number; civiles: number;
   href?: string;
-  onCondenas?: () => void; onActivos?: () => void; onCiviles?: () => void;
+  hrefCondenas?: string; hrefActivos?: string; hrefCiviles?: string;
 }) {
-  const inner = (
-    <div className="rounded-xl bg-white border border-gray-100 shadow-sm p-4 flex flex-col gap-3 h-full">
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{title}</p>
-        <p className="text-3xl font-bold text-gray-900 leading-tight mt-0.5">{count}</p>
-      </div>
-      <div className="border-t border-gray-100" />
-      <div className="space-y-1.5">
-        <StatRow label="Sentencia penal" value={condenas} accent={condenas > 0} onClick={onCondenas} />
-        <StatRow label="En proceso penal" value={activos} accent={activos > 0} onClick={onActivos} />
-        <StatRow label="Sentencia civil" value={civiles} onClick={onCiviles} />
-      </div>
+  const header = (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{title}</p>
+      <p className="text-3xl font-bold text-gray-900 leading-tight mt-0.5">{count}</p>
     </div>
   );
-  if (href) return <Link href={href} className="block">{inner}</Link>;
-  return inner;
-}
-
-// ─── Filter drawer ────────────────────────────────────────────────────────────
-
-const STATUS_LABEL: Record<string, string> = {
-  sentencia_condenatoria: "Sentencia condenatoria",
-  sentencia_firme:        "Sentencia firme",
-  pena_cumplida:          "Pena cumplida",
-  en_curso:               "En curso",
-  en_apelacion:           "En apelación",
-  sentencia_civil:        "Sentencia civil",
-};
-
-const STATUS_COLOR: Record<string, string> = {
-  sentencia_condenatoria: "bg-red-100 text-red-700",
-  sentencia_firme:        "bg-red-100 text-red-700",
-  pena_cumplida:          "bg-red-100 text-red-700",
-  en_curso:               "bg-amber-100 text-amber-700",
-  en_apelacion:           "bg-amber-100 text-amber-700",
-  sentencia_civil:        "bg-blue-100 text-blue-700",
-};
-
-const CONDENA_STATUSES = ["sentencia_condenatoria", "sentencia_firme", "pena_cumplida"];
-const ACTIVOS_STATUSES = ["en_curso", "en_apelacion"];
-const CIVIL_STATUSES   = ["sentencia_civil"];
-
-interface FilterView {
-  title: string;
-  subtitle: string;
-  members: FormulaMemberSlim[];
-  relevantStatuses: string[];
-}
-
-function FilterDrawer({ view, onClose }: { view: FilterView; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40" />
-      <div
-        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[70vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 p-4 border-b border-gray-100">
-          <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">{view.subtitle}</p>
-            <p className="text-sm font-bold text-gray-900 mt-0.5">{view.members.length} candidato{view.members.length !== 1 ? "s" : ""}</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 text-sm transition-colors"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* List */}
-        <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
-          {view.members.map((m) => {
-            const relevant = m.candidate.procesos_judiciales.filter((p) =>
-              view.relevantStatuses.includes(p.status)
-            );
-            return (
-              <div key={m.candidate.id} className="px-4 py-3 flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[13px] font-medium text-gray-900">
-                    {m.candidate.nombres} {m.candidate.apellidos}
-                  </p>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {relevant.map((p, i) => (
-                      <span
-                        key={i}
-                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${STATUS_COLOR[p.status] ?? "bg-gray-100 text-gray-600"}`}
-                      >
-                        {STATUS_LABEL[p.status] ?? p.status}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+    <div className="rounded-xl bg-white border border-gray-100 shadow-sm p-4 flex flex-col gap-3 h-full">
+      {href ? <Link href={href} className="block hover:opacity-80 transition-opacity">{header}</Link> : header}
+      <div className="border-t border-gray-100" />
+      <div className="space-y-1.5">
+        <StatRow label="Sentencia penal"  value={condenas} accent={condenas > 0} href={hrefCondenas} />
+        <StatRow label="En proceso penal" value={activos}  accent={activos > 0}  href={hrefActivos} />
+        <StatRow label="Sentencia civil"  value={civiles}                         href={hrefCiviles} />
       </div>
     </div>
   );
@@ -311,7 +227,6 @@ export default function PartyDetail({ partyId, onBack }: Props) {
   const [detail, setDetail] = useState<DetailWithAllMembers | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<CargoType>("presidente");
-  const [filterView, setFilterView] = useState<FilterView | null>(null);
   const planRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -368,15 +283,6 @@ export default function PartyDetail({ partyId, onBack }: Props) {
     };
   }
 
-  function makeFilter(group: FormulaMemberSlim[], groupLabel: string, filterLabel: string, statuses: string[]) {
-    return () => setFilterView({
-      title: filterLabel,
-      subtitle: `${groupLabel} — ${filterLabel}`,
-      members: group.filter((m) => m.candidate.procesos_judiciales.some((p) => statuses.includes(p.status))),
-      relevantStatuses: statuses,
-    });
-  }
-
   const formulaStats   = groupStats(formulaGroup);
   const senadoresStats = groupStats(senadoresGroup);
   const diputadosStats = groupStats(diputadosGroup);
@@ -415,7 +321,6 @@ export default function PartyDetail({ partyId, onBack }: Props) {
 
   return (
     <div className="min-h-full">
-      {filterView && <FilterDrawer view={filterView} onClose={() => setFilterView(null)} />}
       {/* ── Back button (mobile only) ── */}
       <div className="md:hidden flex items-center gap-2 px-4 py-2 bg-white border-b border-gray-200 sticky top-0 z-10">
         <button
@@ -478,25 +383,24 @@ export default function PartyDetail({ partyId, onBack }: Props) {
               title="Fórmula presidencial"
               count={formulaCount}
               {...formulaStats}
-              onCondenas={makeFilter(formulaGroup, "Fórmula presidencial", "Sentencia penal", CONDENA_STATUSES)}
-              onActivos={makeFilter(formulaGroup, "Fórmula presidencial", "En proceso penal", ACTIVOS_STATUSES)}
-              onCiviles={makeFilter(formulaGroup, "Fórmula presidencial", "Sentencia civil", CIVIL_STATUSES)}
             />
             <GroupStatCard
               title="Senadores"
               count={senadoresCount}
               {...senadoresStats}
-              onCondenas={makeFilter(senadoresGroup, "Senadores", "Sentencia penal", CONDENA_STATUSES)}
-              onActivos={makeFilter(senadoresGroup, "Senadores", "En proceso penal", ACTIVOS_STATUSES)}
-              onCiviles={makeFilter(senadoresGroup, "Senadores", "Sentencia civil", CIVIL_STATUSES)}
+              href={`/congreso/senadores?partido=${detail.id}`}
+              hrefCondenas={`/congreso/senadores?partido=${detail.id}&procesos=con_condena`}
+              hrefActivos={`/congreso/senadores?partido=${detail.id}&procesos=con_activos`}
+              hrefCiviles={`/congreso/senadores?partido=${detail.id}&procesos=sentencia_civil`}
             />
             <GroupStatCard
               title="Diputados"
               count={diputadosCount}
               {...diputadosStats}
-              onCondenas={makeFilter(diputadosGroup, "Diputados", "Sentencia penal", CONDENA_STATUSES)}
-              onActivos={makeFilter(diputadosGroup, "Diputados", "En proceso penal", ACTIVOS_STATUSES)}
-              onCiviles={makeFilter(diputadosGroup, "Diputados", "Sentencia civil", CIVIL_STATUSES)}
+              href={`/congreso/congresistas?partido=${detail.id}`}
+              hrefCondenas={`/congreso/congresistas?partido=${detail.id}&procesos=con_condena`}
+              hrefActivos={`/congreso/congresistas?partido=${detail.id}&procesos=con_activos`}
+              hrefCiviles={`/congreso/congresistas?partido=${detail.id}&procesos=sentencia_civil`}
             />
           </div>
 

@@ -19,13 +19,14 @@ interface Props {
   members: CongresoMember[];
   cargo: CargoType;
   initialPartido?: string;
+  initialProcesos?: string;
 }
 
-export default function CongresoClient({ members, cargo, initialPartido }: Props) {
+export default function CongresoClient({ members, cargo, initialPartido, initialProcesos }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<"list" | "detail">("list");
   const [filters, setFilters] = useState<CongresoFilters>({
-    procesos: "todos",
+    procesos: (initialProcesos as CongresoFilters["procesos"]) ?? "todos",
     educacion: "",
     incumbente: "todos",
     region: "",
