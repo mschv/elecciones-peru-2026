@@ -4,7 +4,7 @@ import PartidosClient from '@/components/partidos/PartidosClient'
 import { countGroupedProposals } from '@/lib/utils/compromisos'
 
 
-export default async function PartidosPage() {
+export default async function PartidosPage({ searchParams }: { searchParams: { partido?: string } }) {
   const supabase = createClient()
 
   // Paginate congress candidates (senadores + congresistas) — same pattern as senadores/page.tsx
@@ -109,6 +109,7 @@ export default async function PartidosPage() {
       procesosStats={procesosStats}
       formulaNamesByPartido={formulaNamesByPartido}
       presidentialByPartido={presidentialByPartido}
+      initialSelected={searchParams.partido}
     />
   )
 }

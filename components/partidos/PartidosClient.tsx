@@ -19,6 +19,7 @@ interface Props {
   procesosStats: ProcesosStats;
   formulaNamesByPartido: Record<string, string[]>;
   presidentialByPartido: Record<string, string>;
+  initialSelected?: string;
 }
 
 function normalize(s: string) {
@@ -28,9 +29,9 @@ function normalize(s: string) {
     .replace(/[úùüû]/g, "u").replace(/ñ/g, "n");
 }
 
-export default function PartidosClient({ partidos, compromisosCounts, procesosStats, formulaNamesByPartido, presidentialByPartido }: Props) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [mobileView, setMobileView] = useState<"list" | "detail">("list");
+export default function PartidosClient({ partidos, compromisosCounts, procesosStats, formulaNamesByPartido, presidentialByPartido, initialSelected }: Props) {
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelected ?? null);
+  const [mobileView, setMobileView] = useState<"list" | "detail">(initialSelected ? "detail" : "list");
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<Filters>({
     procesos: "todos",

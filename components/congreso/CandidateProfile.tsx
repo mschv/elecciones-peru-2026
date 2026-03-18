@@ -279,7 +279,7 @@ export default function CandidateProfile({ member, onBack, standalone = false }:
                   {/* Party link with colored dot */}
                   <div className="flex items-center gap-2 mt-1">
                     <Link
-                      href={`/partidos/${partido.slug}`}
+                      href={`/partidos?partido=${partido.id}`}
                       className="inline-flex items-center gap-1.5 hover:underline"
                     >
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
