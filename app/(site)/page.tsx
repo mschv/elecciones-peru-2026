@@ -47,13 +47,13 @@ const EDU_LABELS: Record<EducationLevel, string> = {
   
 };
 
-const ACTIVE_STATUSES = ["en_curso", "acusacion", "juicio"];
-const APPEAL_STATUSES = ["sentencia_condenatoria"];
+const ACTIVE_STATUSES = ["en_curso", "en_apelacion"];
+const CONDENA_STATUSES = ["sentencia_condenatoria", "sentencia_firme", "pena_cumplida"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function eduGroup(education: { nivel: EducationLevel }[]): string {
-  if (!education.length) return "sinEstudios";
+  if (!education.length) return "noReporta";
   const top = education.reduce((best, e) =>
     (EDU_RANK[e.nivel] ?? 0) > (EDU_RANK[best.nivel] ?? 0) ? e : best
   );
@@ -67,16 +67,18 @@ function toPct(
   if (total === 0) return counts;
   const keys = Object.keys(counts);
   const scaled: Record<string, number> = {};
-  let sum = 0;
-  keys.forEach((k, i) => {
-    if (i < keys.length - 1) {
-      const v = Math.round((counts[k] / total) * 100);
-      scaled[k] = v;
-      sum += v;
-    } else {
-      scaled[k] = 100 - sum; // last bar takes remainder
-    }
+  keys.forEach((k) => {
+    scaled[k] = counts[k] === 0 ? 0 : Math.round((counts[k] / total) * 100);
   });
+  // Fix rounding: give remainder to the largest non-zero bucket
+  const sum = Object.values(scaled).reduce((a, b) => a + b, 0);
+  const diff = 100 - sum;
+  if (diff !== 0) {
+    const largest = keys.reduce((best, k) =>
+      scaled[k] > scaled[best] ? k : best
+    );
+    scaled[largest] += diff;
+  }
   return scaled;
 }
 
@@ -90,17 +92,33 @@ function highestEduLabel(education: { nivel: EducationLevel }[]): string {
 
 // ─── Data aggregation types ───────────────────────────────────────────────────
 
-type RawMember = {
+type RawCandidate = {
+  id: string;
   cargo: string;
-  candidate: {
-    id: string;
-    education: { nivel: EducationLevel }[];
-    experience: { sector: string }[];
-    procesos_judiciales: { status: string }[];
-  };
+  education: { nivel: EducationLevel }[];
+  experience: { sector: string }[];
+  procesos_judiciales: { status: string }[];
 };
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+async function fetchAllCandidatesForCharts(supabase: ReturnType<typeof createClient>) {
+  const PAGE = 1000;
+  const results: RawCandidate[] = [];
+  let offset = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("candidates")
+      .select(`id, cargo, education ( nivel ), experience ( sector ), procesos_judiciales ( status )`)
+      .in("cargo", ["senador", "congresista"])
+      .range(offset, offset + PAGE - 1);
+    if (!data?.length) break;
+    results.push(...(data as unknown as RawCandidate[]));
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return results;
+}
 
 export default async function HomePage() {
   const supabase = createClient();
@@ -110,7 +128,8 @@ export default async function HomePage() {
     { count: _totalPartidos },
     { count: totalFormulas },
     { count: totalCandidatosCount },
-    { data: rawMembers },
+    rawCandidatesForCharts,
+    { data: rawFormulaMembersForCharts },
     { data: rawFormulaSamples },
     { data: rawPartidoSamples },
     { data: rawCongresistasSamples },
@@ -118,6 +137,7 @@ export default async function HomePage() {
     supabase.from("partidos").select("*", { count: "exact", head: true }),
     supabase.from("formula_members").select("*", { count: "exact", head: true }).eq("cargo", "presidente"),
     supabase.from("candidates").select("*", { count: "exact", head: true }),
+    fetchAllCandidatesForCharts(supabase),
     supabase.from("formula_members").select(`
       cargo,
       candidate:candidate_id (
@@ -126,7 +146,7 @@ export default async function HomePage() {
         experience ( sector ),
         procesos_judiciales ( status )
       )
-    `).limit(10000),
+    `).in("cargo", ["presidente", "vicepresidente_1", "vicepresidente_2"]),
     supabase
       .from("formulas")
       .select(`
@@ -176,49 +196,46 @@ export default async function HomePage() {
       .limit(2),
   ]);
 
-  const members = (rawMembers ?? []) as unknown as RawMember[];
+  // All entries per cargo (a candidate in multiple roles appears once per role)
+  const chartCandidates: RawCandidate[] = [
+    ...rawCandidatesForCharts,
+    ...((rawFormulaMembersForCharts ?? []) as unknown as { cargo: string; candidate: Omit<RawCandidate, "cargo"> }[])
+      .map((m) => ({ ...m.candidate, cargo: m.cargo })),
+  ];
 
-  // ── 2. Deduplicate for global stats ──────────────────────────────────────────
-  const uniqueById = new Map<string, RawMember>();
-  for (const m of members) {
-    if (!uniqueById.has(m.candidate.id)) uniqueById.set(m.candidate.id, m);
+  // ── 2. Global stats (unique candidates only) ──────────────────────────────────
+  const uniqueById = new Map<string, RawCandidate>();
+  for (const c of chartCandidates) {
+    if (!uniqueById.has(c.id)) uniqueById.set(c.id, c);
   }
-  const uniqueList = Array.from(uniqueById.values());
-  const totalCandidatos = uniqueList.length;
+  const uniqueCandidates = Array.from(uniqueById.values());
+  const totalCandidatos = uniqueCandidates.length;
 
   let withProceso = 0;
   let withPublic = 0;
   let withPrivate = 0;
 
-  for (const m of uniqueList) {
-    if (m.candidate.procesos_judiciales.length > 0) withProceso++;
-    if (m.candidate.experience.some((e) => e.sector === "publico")) withPublic++;
-    if (
-      m.candidate.experience.some((e) =>
-        ["privado", "academia", "ong", "otro"].includes(e.sector)
-      )
-    )
-      withPrivate++;
+  for (const c of uniqueCandidates) {
+    if (c.procesos_judiciales.some((p) => CONDENA_STATUSES.includes(p.status))) withProceso++;
+    if (c.experience.some((e) => e.sector === "publico")) withPublic++;
+    if (c.experience.some((e) => ["privado", "academia", "ong", "otro"].includes(e.sector))) withPrivate++;
   }
-
-  const pctConProceso =
-    totalCandidatos > 0 ? Math.round((withProceso / totalCandidatos) * 100) : 0;
 
 
   // ── 3. Per-cargo chart data ───────────────────────────────────────────────────
-  const cargoGroups: Record<string, RawMember[]> = {};
-  for (const m of members) {
-    if (!cargoGroups[m.cargo]) cargoGroups[m.cargo] = [];
-    cargoGroups[m.cargo].push(m);
+  const cargoGroups: Record<string, RawCandidate[]> = {};
+  for (const c of chartCandidates) {
+    if (!cargoGroups[c.cargo]) cargoGroups[c.cargo] = [];
+    cargoGroups[c.cargo].push(c);
   }
 
   const activeCargos = CARGO_ORDER.filter((c) => (cargoGroups[c]?.length ?? 0) > 0);
 
   const eduChart: EduChartRow[] = activeCargos.map((cargo) => {
     const group = cargoGroups[cargo] ?? [];
-    const counts = { sinEstudios: 0, primaria: 0, secundaria: 0, tecnico: 0, universitario: 0, posgrado: 0 };
-    for (const m of group) {
-      const key = eduGroup(m.candidate.education);
+    const counts = { noReporta: 0, sinEstudios: 0, primaria: 0, secundaria: 0, tecnico: 0, universitario: 0, posgrado: 0 };
+    for (const c of group) {
+      const key = eduGroup(c.education);
       (counts as Record<string, number>)[key]++;
     }
     return { cargo: CARGO_DISPLAY[cargo] ?? cargo, ...toPct(counts, group.length), _total: group.length } as EduChartRow;
@@ -227,9 +244,9 @@ export default async function HomePage() {
   const expChart: ExpChartRow[] = activeCargos.map((cargo) => {
     const group = cargoGroups[cargo] ?? [];
     let soloPublico = 0, soloPrivado = 0, mixto = 0, sinExp = 0;
-    for (const m of group) {
-      const hasPublic = m.candidate.experience.some((e) => e.sector === "publico");
-      const hasPrivate = m.candidate.experience.some((e) =>
+    for (const c of group) {
+      const hasPublic = c.experience.some((e) => e.sector === "publico");
+      const hasPrivate = c.experience.some((e) =>
         ["privado", "academia", "ong", "otro"].includes(e.sector)
       );
       if (hasPublic && hasPrivate) mixto++;
@@ -243,7 +260,7 @@ export default async function HomePage() {
   function makeSimpleChart(predicate: (ps: { status: string }[]) => boolean): { cargo: string; con: number; sin: number; _total: number }[] {
     return activeCargos.map((cargo) => {
       const group = cargoGroups[cargo] ?? [];
-      const con = group.filter((m) => predicate(m.candidate.procesos_judiciales)).length;
+      const con = group.filter((c) => predicate(c.procesos_judiciales)).length;
       const sin = group.length - con;
       const pct = toPct({ con, sin }, group.length);
       return { cargo: CARGO_DISPLAY[cargo] ?? cargo, con: pct.con, sin: pct.sin, _total: group.length };
@@ -295,7 +312,7 @@ export default async function HomePage() {
     const totalCandidatosP = members.length;
     const conSentencia = members.filter((m: any) =>
       m.candidate.procesos_judiciales.some((pj: any) =>
-        [...ACTIVE_STATUSES, ...APPEAL_STATUSES].includes(pj.status)
+        [...ACTIVE_STATUSES, ...CONDENA_STATUSES].includes(pj.status)
       )
     ).length;
     return {
@@ -392,8 +409,11 @@ export default async function HomePage() {
               <p className="text-xs uppercase tracking-widest font-semibold mb-1" style={{ color: "#c0392b" }}>
                 Candidatos con condena firme
               </p>
-              <p className="text-3xl font-bold" style={{ color: "#c0392b" }}>{pctConProceso}%</p>
-              <p className="text-xs text-red-400 mt-1">de todos los candidatos</p>
+              <p className="text-3xl font-bold" style={{ color: "#c0392b" }}>
+                {withProceso.toLocaleString("es-PE")}{" "}
+                <span className="text-lg font-medium">de {totalCandidatos.toLocaleString("es-PE")}</span>
+              </p>
+              <p className="text-xs text-red-400 mt-1">candidatos registrados</p>
             </div>
           </div>
 

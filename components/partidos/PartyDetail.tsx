@@ -31,9 +31,31 @@ interface DetailWithAllMembers extends PartidoDetail {
 
 // ─── Supabase fetch ───────────────────────────────────────────────────────────
 
+async function fetchCongressCandidates(supabase: ReturnType<typeof createClient>, partyId: string) {
+  // Senadores and congresistas are stored in `candidates` with partido_id.
+  // formula_members only holds presidential cargo (cargo_type enum constraint).
+  const PAGE = 1000;
+  const results: any[] = [];
+  let offset = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("candidates")
+      .select(`id, nombres, apellidos, foto_url, cargo, education ( nivel ), procesos_judiciales ( status )`)
+      .eq("partido_id", partyId)
+      .in("cargo", ["senador", "congresista"])
+      .order("apellidos")
+      .range(offset, offset + PAGE - 1);
+    if (!data?.length) break;
+    results.push(...data);
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return results;
+}
+
 async function fetchDetail(partyId: string): Promise<DetailWithAllMembers | null> {
   const supabase = createClient();
-  const [{ data, error }, { data: candidatesData }] = await Promise.all([
+  const [{ data, error }, congressData] = await Promise.all([
     supabase
       .from("partidos")
       .select(`
@@ -58,24 +80,23 @@ async function fetchDetail(partyId: string): Promise<DetailWithAllMembers | null
       `)
       .eq("id", partyId)
       .single(),
-    supabase
-      .from("candidates")
-      .select(`
-        id, nombres, apellidos, foto_url, cargo,
-        education ( nivel ),
-        procesos_judiciales ( status )
-      `)
-      .eq("partido_id", partyId)
-      .in("cargo", ["senador", "congresista"]),
+    fetchCongressCandidates(supabase, partyId),
   ]);
 
   if (error) { console.error("[PartyDetail] fetch error:", error); return null; }
 
   const partido = data as unknown as PartidoDetail;
-  const formula = partido.formulas?.find((f) => f.activa) ?? partido.formulas?.[0];
-  const formulaMembers: FormulaMemberSlim[] = formula?.formula_members ?? [];
 
-  const congressMembers: FormulaMemberSlim[] = (candidatesData ?? []).map((c: any) => ({
+  // Presidential formula: find the one with a "presidente" member
+  const presidentialFormula =
+    (partido.formulas ?? []).find((f) =>
+      (f.formula_members ?? []).some((m: any) => m.cargo === "presidente")
+    ) ??
+    (partido.formulas ?? []).find((f) => f.activa) ??
+    (partido.formulas ?? [])[0];
+  const formulaMembers: FormulaMemberSlim[] = presidentialFormula?.formula_members ?? [];
+
+  const congressMembers: FormulaMemberSlim[] = congressData.map((c: any) => ({
     cargo: c.cargo,
     orden: 0,
     candidate: {
@@ -93,20 +114,34 @@ async function fetchDetail(partyId: string): Promise<DetailWithAllMembers | null
 
 // ─── Small UI atoms ───────────────────────────────────────────────────────────
 
-function StatCard({ label, value, accent, href }: {
-  label: string; value: number; accent?: boolean; href?: string;
+function StatRow({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-[11px] text-gray-600">{label}</span>
+      <span className={`text-[11px] font-semibold ${accent ? "text-red-600" : "text-gray-800"}`}>{value}</span>
+    </div>
+  );
+}
+
+function GroupStatCard({ title, count, condenas, activos, civiles, href }: {
+  title: string; count: number; condenas: number; activos: number; civiles: number; href?: string;
 }) {
   const inner = (
-    <>
-      <div className={`text-xl font-bold leading-tight ${accent ? "text-red-600" : "text-gray-900"}`}>{value}</div>
-      <div className="text-[10px] text-gray-500 mt-0.5 leading-tight text-center">{label}</div>
-    </>
+    <div className="rounded-xl bg-white border border-gray-100 shadow-sm p-4 flex flex-col gap-3 h-full">
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{title}</p>
+        <p className="text-3xl font-bold text-gray-900 leading-tight mt-0.5">{count}</p>
+      </div>
+      <div className="border-t border-gray-100" />
+      <div className="space-y-1.5">
+        <StatRow label="Sentencia penal" value={condenas} accent={condenas > 0} />
+        <StatRow label="En proceso penal" value={activos} accent={activos > 0} />
+        <StatRow label="Sentencia civil" value={civiles} />
+      </div>
+    </div>
   );
-  const cls = `flex-1 flex flex-col items-center justify-center bg-white rounded-lg border border-gray-200 p-3 transition-colors ${
-    href ? "hover:border-gray-300 cursor-pointer" : ""
-  }`;
-  if (href) return <Link href={href} className={cls}>{inner}</Link>;
-  return <div className={cls}>{inner}</div>;
+  if (href) return <Link href={href} className="block">{inner}</Link>;
+  return inner;
 }
 
 function InitialsCircle({ name, color, size = 52 }: { name: string; color: string; size?: number }) {
@@ -200,19 +235,39 @@ export default function PartyDetail({ partyId, onBack }: Props) {
   }
 
   const color = detail.color_hex ?? "#6b7280";
-  const formula = detail.formulas?.find((f) => f.activa) ?? detail.formulas?.[0] ?? null;
+  // Use the formula that has a "presidente" member (presidential formula)
+  const formula =
+    detail.formulas?.find((f) =>
+      (f.formula_members ?? []).some((m: any) => m.cargo === "presidente")
+    ) ??
+    detail.formulas?.find((f) => f.activa) ??
+    detail.formulas?.[0] ??
+    null;
   const formulaMembers: FormulaMemberSlim[] = formula?.formula_members ?? [];
   const members = detail.allMembers.filter(
     (m, i, arr) => arr.findIndex((x) => x.candidate.id === m.candidate.id) === i
   );
 
-  // Stats
+  // Per-group stats
+  const formulaGroup   = detail.allMembers.filter((m) => ["presidente", "vicepresidente_1", "vicepresidente_2"].includes(m.cargo));
+  const senadoresGroup = detail.allMembers.filter((m) => m.cargo === "senador");
+  const diputadosGroup = detail.allMembers.filter((m) => m.cargo === "congresista");
+
+  function groupStats(group: FormulaMemberSlim[]) {
+    return {
+      condenas: group.filter((m) => m.candidate.procesos_judiciales.some((p) => ["sentencia_condenatoria", "sentencia_firme", "pena_cumplida"].includes(p.status))).length,
+      activos:  group.filter((m) => m.candidate.procesos_judiciales.some((p) => ["en_curso", "en_apelacion"].includes(p.status))).length,
+      civiles:  group.filter((m) => m.candidate.procesos_judiciales.some((p) => p.status === "sentencia_civil")).length,
+    };
+  }
+
+  const formulaStats   = groupStats(formulaGroup);
+  const senadoresStats = groupStats(senadoresGroup);
+  const diputadosStats = groupStats(diputadosGroup);
+
   const formulaCount   = formulaMembers.length;
-  const senadoresCount = members.filter((m) => m.cargo === "senador").length;
-  const diputadosCount = members.filter((m) => m.cargo === "congresista").length;
-  const activos        = members.filter((m) => m.candidate.procesos_judiciales.some((p) => ["en_curso", "en_apelacion"].includes(p.status))).length;
-  const condenas       = members.filter((m) => m.candidate.procesos_judiciales.some((p) => ["sentencia_condenatoria", "sentencia_firme", "pena_cumplida"].includes(p.status))).length;
-  const civiles        = members.filter((m) => m.candidate.procesos_judiciales.some((p) => p.status === "sentencia_civil")).length;
+  const senadoresCount = senadoresGroup.length;
+  const diputadosCount = diputadosGroup.length;
 
   // Plan — filter out header rows (scraped column-name rows, e.g. indicador === "INDICADORES")
   const isHeaderRow = (p: PlanGobiernoSlim) =>
@@ -300,25 +355,25 @@ export default function PartyDetail({ partyId, onBack }: Props) {
             </div>
           </div>
 
-          {/* Row 2: 4 stat cards */}
-          <div className="flex gap-2">
-            <StatCard
-              label="Fórmula presidencial"
-              value={formulaCount}
+          {/* Row 2: stat cards per group */}
+          <div className="grid grid-cols-3 gap-2">
+            <GroupStatCard
+              title="Fórmula presidencial"
+              count={formulaCount}
+              {...formulaStats}
             />
-            <StatCard
-              label="Senadores"
-              value={senadoresCount}
+            <GroupStatCard
+              title="Senadores"
+              count={senadoresCount}
+              {...senadoresStats}
               href={`/congreso/senadores?partido=${detail.id}`}
             />
-            <StatCard
-              label="Diputados"
-              value={diputadosCount}
+            <GroupStatCard
+              title="Diputados"
+              count={diputadosCount}
+              {...diputadosStats}
               href={`/congreso/congresistas?partido=${detail.id}`}
             />
-            <StatCard label="Candidatos con procesos penales activos" value={activos} accent={activos > 0} />
-            {condenas > 0 && <StatCard label="Candidatos con condena firme" value={condenas} accent />}
-            {civiles > 0 && <StatCard label="Candidatos con sentencias civiles" value={civiles} accent />}
           </div>
 
         </div>

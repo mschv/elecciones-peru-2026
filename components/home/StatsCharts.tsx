@@ -11,6 +11,7 @@ import {
 
 export interface EduChartRow {
   cargo: string;
+  noReporta: number;
   sinEstudios: number;
   primaria: number;
   secundaria: number;
@@ -47,8 +48,9 @@ interface Props {
 const AXIS_COLOR = "#6b7280";
 
 const EDU_SEGMENTS = [
-  { key: "sinEstudios",   label: "Sin estudios",  color: "#3a3a3a" },
-  { key: "primaria",      label: "Primaria",       color: "#4b4b4b" },
+  { key: "noReporta",     label: "No reporta",     color: "#d1d5db" },
+  { key: "sinEstudios",   label: "Sin estudios",   color: "#3a3a3a" },
+  { key: "primaria",      label: "Primaria",        color: "#4b4b4b" },
   { key: "secundaria",    label: "Secundaria",     color: "#606060" },
   { key: "tecnico",       label: "Técnico",        color: "#787878" },
   { key: "universitario", label: "Universitario",  color: "#3b82f6" },
@@ -107,19 +109,21 @@ const PCT_TOOLTIP = ({ active, payload, label }: any) => {
   return (
     <div className="rounded-lg shadow-lg p-2.5 text-xs border border-gray-200 bg-white">
       <p className="font-medium text-gray-800 mb-1">{label}</p>
-      {payload.map((p: { name: string; value: number; fill: string; dataKey: string }) => {
-        const count = total ? Math.round((p.value / 100) * total) : null;
-        return (
-          <div key={p.name} className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: p.fill }} />
-            <span className="text-gray-500">{p.name}:</span>
-            <span className="font-medium text-gray-800">{p.value}%</span>
-            {count !== null && (
-              <span className="text-gray-400">({count})</span>
-            )}
-          </div>
-        );
-      })}
+      {payload
+        .filter((p: { value: number }) => p.value > 0)
+        .map((p: { name: string; value: number; fill: string; dataKey: string }) => {
+          const count = total ? Math.round((p.value / 100) * total) : null;
+          return (
+            <div key={p.name} className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: p.fill }} />
+              <span className="text-gray-500">{p.name}:</span>
+              <span className="font-medium text-gray-800">{p.value}%</span>
+              {count !== null && (
+                <span className="text-gray-400">({count})</span>
+              )}
+            </div>
+          );
+        })}
     </div>
   );
 };
