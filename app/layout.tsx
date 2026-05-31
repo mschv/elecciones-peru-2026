@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Playfair_Display } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
 import BottomTabs from "@/components/layout/BottomTabs";
@@ -43,6 +44,7 @@ export default function RootLayout({
         <main className="pb-16 md:pb-0">{children}</main>
         <BottomTabs />
         <CompareTray />
+        <Analytics />
       </body>
     </html>
   );
